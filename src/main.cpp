@@ -112,6 +112,11 @@ void setup() {
     strip1.show();
     delay(5000);
 
+    smiley.g = 0;
+    led_heart(strip1, smiley);
+    strip1.show();
+    delay(5000);
+
     // square8by8 - Sparkle
     square8by8_sparkle.length = 64;       // number of LEDs in range
     square8by8_sparkle.startIndex = 0;   // starting LED index

@@ -4,3 +4,4 @@
 #include "led_sequences.h"
 
 void led_smiley(Adafruit_NeoPixel &s, led_animation &anim);
+void led_heart(Adafruit_NeoPixel &s, led_animation &anim);

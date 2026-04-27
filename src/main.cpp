@@ -20,7 +20,38 @@ Adafruit_NeoPixel onboard(1, PIN_ONBOARD, NEO_GRB + NEO_KHZ800);
 
 #define HEARTBEAT_INTERVAL_MS 10000
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+
+// ── LED Stuff ─────────────────────────────────────────────────────────────────
+LedStrip square8by8(strip1, false, false, 128, 0, 64);
+LedStrip radarEyeStrip(strip2, false, true, 128, 1, 6);
+LedStrip radarEyeRing(strip2, false, true, 128, 8, 64);
+//LedStrip square8by8 = {
+//    strip1,     // NoeoPixel strip identifier
+//    false,      // isRGBW
+//    true,       // Use Gamma Correction
+//    128,        // Brightness
+//    0,          // Starting Index
+//    64          // Length
+//};
+//LedStrip radarEyeStrip = {
+//    strip2,     // NoeoPixel strip identifier
+//    true,       // isRGBW
+//    false,      // Use Gamma Correction
+//    128,        // Brightness
+//    1,          // Starting Index - technically 0 but it's obscured
+//    6           // Length - technically 8, both ends obscured
+//};
+//LedStrip radarEyeRing = {
+//    strip2,     // NoeoPixel strip identifier
+//    true,       // isRGBW
+//    false,      // Use Gamma Correction
+//    128,        // Brightness
+//    8,          // Starting Index
+//    24          // Length
+//};
+
+
+
 led_sparkleRandomAnim square8by8_sparkle = {};
 led_sparkleRandomAnim radarEyeStrip_sparkle = {};
 led_SpinAnim radarEyeRing_spin = {};
@@ -28,6 +59,7 @@ led_breatheAnim radarEyeRing_breathe = {};
 led_gameOfLife square8by8_gameOfLife = {};
 led_animation smiley = {};
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
 void fillStrip(Adafruit_NeoPixel &strip, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
     uint32_t color = strip.Color(r, g, b, w);
     for (int i = 0; i < strip.numPixels(); i++) {
@@ -58,12 +90,15 @@ void setup() {
     onboard.clear();
     onboard.show();
 
+
     u_int8_t r = 0;
     u_int8_t g = 0;
     u_int8_t b = 0;
     u_int8_t w = 0;
-    #define RGB_TEST_DELAY 750
 
+    #define RGB_TEST_DELAY 750
+    #define RGB_TEST_ENABLED 0
+    #if RGB_TEST_ENABLED == 1
     Serial.println("Sparkle Motion Mini — Red test");
     // test red
     r=128; g=0; b=0; w=0;
@@ -101,21 +136,9 @@ void setup() {
     fillStrip(strip1, r, g, b, w);
     fillStrip(strip2, r, g, b, w);
     delay(25);
+    #endif
 
-    smiley.length = 64;       // number of LEDs in range
-    smiley.startIndex = 0;   // starting LED index
-    smiley.r = 255;
-    smiley.g = 255;
-    smiley.b = 0;
-    smiley.w = 0;
-    led_smiley(strip1, smiley);
-    strip1.show();
-    delay(5000);
-
-    smiley.g = 0;
-    led_heart(strip1, smiley);
-    strip1.show();
-    delay(5000);
+    show_all_sprites(square8by8, 1500, 500, 8);
 
     // square8by8 - Sparkle
     square8by8_sparkle.length = 64;       // number of LEDs in range
@@ -152,7 +175,7 @@ void setup() {
     radarEyeStrip_sparkle.w = 0;
     radarEyeStrip_sparkle.count = 3;      // how many pixels to light (1 .. 100+) - will be randomized as the routine functions
     radarEyeStrip_sparkle.minCount = 1;      // minimum number of random pixels to light
-    radarEyeStrip_sparkle.maxCount = 6;      // maximium number of random pixels to light
+    radarEyeStrip_sparkle.maxCount = 3;      // maximium number of random pixels to light
     radarEyeStrip_sparkle.delay = 875;        // animation speed in ms - will be randomized as the routine functions
     radarEyeStrip_sparkle.minDelay = 750;     // animation speed in ms - minimum for randomization
     radarEyeStrip_sparkle.maxDelay = 3000;     // animation speed in ms - maximum for randomization
@@ -167,7 +190,7 @@ void setup() {
     radarEyeRing_spin.b = 129;
     radarEyeRing_spin.w = 16;
     radarEyeRing_spin.delay = 500;        // animation speed in ms - will be randomized as the routine functions
-    radarEyeRing_spin.enabled = false;
+    radarEyeRing_spin.enabled = true;
 
     // RadarEyeRing - Breathe
     radarEyeRing_breathe.length = 24;
@@ -178,7 +201,7 @@ void setup() {
     radarEyeRing_breathe.w = 0;
     radarEyeRing_breathe.delay = 50;        // animation speed in ms - needs to match defaultDelay
     radarEyeRing_breathe.defaultDelay = 50;        // animation speed in ms - needs to match defaultDelay
-    radarEyeRing_breathe.enabled = true;
+    radarEyeRing_breathe.enabled = false;
 
 }
 

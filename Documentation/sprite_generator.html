@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>8x8 LED Sprite Editor</title>
+
+<style>
+  body {
+    font-family: Arial;
+    background: #222;
+    color: #eee;
+    text-align: center;
+  }
+
+  .palette {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin: 15px;
+  }
+
+  .palette-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .swatch {
+    width: 40px;
+    height: 40px;
+    border: 2px solid #fff;
+    cursor: pointer;
+  }
+
+  input {
+    width: 80px;
+    margin-top: 4px;
+    background: #111;
+    color: #0f0;
+    border: 1px solid #555;
+    text-align: center;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(8, 40px);
+    gap: 4px;
+    justify-content: center;
+    margin: 20px;
+  }
+
+  .cell {
+    width: 40px;
+    height: 40px;
+    background: #000;
+    border: 1px solid #555;
+    cursor: pointer;
+  }
+
+  textarea {
+    width: 90%;
+    height: 180px;
+    background: #111;
+    color: #0f0;
+    font-family: monospace;
+    margin-top: 10px;
+  }
+
+  button {
+    margin: 6px;
+    padding: 8px 14px;
+  }
+</style>
+</head>
+
+<body>
+
+<h2>8×8 LED Sprite Editor</h2>
+
+<div class="palette" id="palette"></div>
+
+<div class="grid" id="grid"></div>
+
+<button onclick="clearGrid()">Clear</button>
+<button onclick="generate()">Generate Code</button>
+
+<textarea id="output"></textarea>
+
+<script>
+const SIZE = 8;
+
+// Palette stored as REAL colors
+let colors = [
+  "#000000", "#FF0000", "#00FF00", "#0000FF",
+  "#FFFF00", "#FF00FF", "#00FFFF", "#FFFFFF"
+];
+
+let currentIndex = 1;
+
+// 8x8 grid stores PALETTE INDICES
+let grid = Array.from({ length: SIZE }, () =>
+  Array.from({ length: SIZE }, () => 0)
+);
+
+// ----------------------------
+// Palette UI
+// ----------------------------
+const paletteDiv = document.getElementById("palette");
+
+function renderPalette() {
+  paletteDiv.innerHTML = "";
+
+  colors.forEach((c, i) => {
+    const wrap = document.createElement("div");
+    wrap.className = "palette-item";
+
+    const swatch = document.createElement("div");
+    swatch.className = "swatch";
+    swatch.style.background = c;
+
+    swatch.onclick = () => {
+      currentIndex = i;
+    };
+
+    const input = document.createElement("input");
+    input.value = c;
+
+    input.onchange = () => {
+      if (/^#[0-9A-Fa-f]{6}$/.test(input.value)) {
+        colors[i] = input.value.toUpperCase();
+        swatch.style.background = colors[i];
+        redrawGrid();
+      } else {
+        input.value = colors[i];
+      }
+    };
+
+    wrap.appendChild(swatch);
+    wrap.appendChild(input);
+    paletteDiv.appendChild(wrap);
+  });
+}
+
+// ----------------------------
+// Grid UI
+// ----------------------------
+const gridDiv = document.getElementById("grid");
+
+function renderGrid() {
+  gridDiv.innerHTML = "";
+
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+
+      const cell = document.createElement("div");
+      cell.className = "cell";
+
+      cell.onclick = () => {
+        grid[y][x] = currentIndex;
+        cell.style.background = colors[currentIndex];
+      };
+
+      gridDiv.appendChild(cell);
+    }
+  }
+
+  redrawGrid();
+}
+
+function redrawGrid() {
+  const cells = document.querySelectorAll(".cell");
+  let i = 0;
+
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      cells[i].style.background = colors[grid[y][x]];
+      i++;
+    }
+  }
+}
+
+// ----------------------------
+// Utilities
+// ----------------------------
+function clearGrid() {
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      grid[y][x] = 0;
+    }
+  }
+  redrawGrid();
+}
+
+// ----------------------------
+// Export C++ PROGMEM
+// ----------------------------
+function toCppHex(i) {
+  return "0x" + colors[i].substring(1);
+}
+
+function generate() {
+  let out = "const uint32_t SPRITE[8][8] PROGMEM = {\n";
+
+  for (let y = 0; y < SIZE; y++) {
+    out += "  {";
+    for (let x = 0; x < SIZE; x++) {
+      out += toCppHex(grid[y][x]);
+      if (x < SIZE - 1) out += ", ";
+    }
+    out += "}";
+    if (y < SIZE - 1) out += ",";
+    out += "\n";
+  }
+
+  out += "};";
+
+  document.getElementById("output").value = out;
+}
+
+// ----------------------------
+// Init
+// ----------------------------
+renderPalette();
+renderGrid();
+
+</script>
+
+</body>
+</html>

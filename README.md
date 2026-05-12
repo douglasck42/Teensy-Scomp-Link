@@ -2,6 +2,18 @@ Teensy Scomp Link
 
 See the main repositoy documentation here: https://github.com/douglasck42/Teensy-Motivator
 
+## Overview
+Currently designed for the [Adafruit Mini Sparkle Motion](https://www.adafruit.com/product/6160) (with or without the terminal block) 
+
+## Hardware Pins
+
+We use the following pins for Serial I/O:
+
+```
+#define PIN_SERIAL_RX  26
+#define PIN_SERIAL_TX  25
+```
+
 ## License
 
 Firmware:

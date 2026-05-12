@@ -122,7 +122,7 @@ static ScompHeartbeat  g_hb             = {};
 static ScompAudioState g_audio          = {};
 static unsigned long   g_last_teensy_ms = 0;
 
-void onScompMessage(uint8_t msg_type, const uint8_t *payload, uint8_t len, void *) {
+void onScompMessage(uint8_t msg_type, const uint8_t *payload, uint16_t len, void *) {
     g_last_teensy_ms = millis();
     boolean my_debug = true;
 
@@ -130,24 +130,21 @@ void onScompMessage(uint8_t msg_type, const uint8_t *payload, uint8_t len, void 
 
         case SCOMP_MSG_HEARTBEAT: {
             static unsigned long millis_lastEspHeartbeat = 0;
-            unsigned long now_hb = millis();
+            unsigned long now_hb = g_last_teensy_ms;
             unsigned long gap = millis_lastEspHeartbeat ? (now_hb - millis_lastEspHeartbeat) : 0;
-            millis_lastHeartbeat = now_hb; // reset our heartbeat timeout timer message, this one is plenty
             millis_lastEspHeartbeat = now_hb;
-            if (my_debug) { //(settings.system.debug) {
-                if (len >= sizeof(ScompHeartbeat)) {
-                    const auto *hb = reinterpret_cast<const ScompHeartbeat *>(payload);
-                    Serial.printf("Heartbeat: Scomp UP ");
-                    Serial.print(formatUptime(now_hb));     // ESP32 doesn't like when I print this via printf
-                    Serial.printf(" | Teensy UP ");
-                    Serial.print(formatUptime(hb->uptime_ms));// ESP32 doesn't like when I print this via printf
-                    Serial.printf(" | v%u flags=0x%02X gap=%lums",hb->version, hb->flags, gap);
-                    Serial.print("\n");
-                } else {
-                    Serial.printf("Heartbeat: Scomp UP ");
-                    Serial.print(formatUptime(now_hb)); // ESP32 doesn't like when I print this via printf
-                    Serial.printf("; Teensy FAULT | short payload %u bytes\n", len);
-                }
+            if (len >= sizeof(ScompHeartbeat)) {
+                const auto *hb = reinterpret_cast<const ScompHeartbeat *>(payload);
+                Serial.printf("Heartbeat: Scomp UP ");
+                Serial.print(formatUptime(now_hb));     // ESP32 doesn't like when I print this via printf
+                Serial.printf(" | Teensy UP ");
+                Serial.print(formatUptime(hb->uptime_ms));// ESP32 doesn't like when I print this via printf
+                Serial.printf(" | v%u flags=0x%02X gap=%lums",hb->version, hb->flags, gap);
+                Serial.print("\n");
+            } else {
+                Serial.printf("Heartbeat: Scomp UP ");
+                Serial.print(formatUptime(now_hb)); // ESP32 doesn't like when I print this via printf
+                Serial.printf("; Teensy FAULT | short payload %u bytes\n", len);
             }
             break;
         }
@@ -376,18 +373,20 @@ void loop() {
         scompSendState(now);
     }
 
-    // Heartbeat (USB Serial)
-    if (now - millis_lastHeartbeat >= (HEARTBEAT_INTERVAL_MS + HEARTBEAT_INTERVAL_MS)) {
-        #if DEBUG_SCOMP_RX == 1
-        Serial.printf("Heartbeat: Scomp Alive | SCOMP rx bytes=%lu frames=%lu crc_err=%lu sync_drops=%lu\n",
-                      scomp.rxBytes(), scomp.rxFrames(), scomp.rxCrcErrors(), scomp.rxSyncDrops());
-        #else
-        Serial.printf("Heartbeat: Scomp UP ");
-        Serial.print(formatUptime(now));
-        Serial.printf(" | Teensy DOWN\n");
-        #endif
-
+    // Heartbeat (USB Serial) — only prints when SCOMP link is silent
+    if (now - millis_lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
         millis_lastHeartbeat = now;
+        bool teensy_alive = g_last_teensy_ms > 0 && (now - g_last_teensy_ms) < (HEARTBEAT_INTERVAL_MS * 2);
+        if (!teensy_alive) {
+            #if DEBUG_SCOMP_RX == 1
+            Serial.printf("Heartbeat: Scomp Alive | SCOMP rx bytes=%lu frames=%lu crc_err=%lu sync_drops=%lu\n",
+                          scomp.rxBytes(), scomp.rxFrames(), scomp.rxCrcErrors(), scomp.rxSyncDrops());
+            #else
+            Serial.printf("Heartbeat: Scomp UP ");
+            Serial.print(formatUptime(now));
+            Serial.printf(" | Teensy DOWN\n");
+            #endif
+        }
     }
 
     // Heartbeat (Scomp)

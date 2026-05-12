@@ -17,14 +17,21 @@
 
 #define BRIGHTNESS      40   // 0–255, keep low on USB power
 
+#ifndef PIN_SERIAL_RX
 #define PIN_SERIAL_RX  26
+#endif
+#ifndef PIN_SERIAL_TX
 #define PIN_SERIAL_TX  25
+#endif
 HardwareSerial scompSerialPort(1);   // UART1 (UART0 is the USB debug port)
 ScompSerial scomp;
 
 // ── misc ─────────────────────────────────────────────────────────
 #ifndef DEBUG_SCOMP_RX
 #define DEBUG_SCOMP_RX 0
+#endif
+#ifndef SCOMP_BAUD_RATE
+#define SCOMP_BAUD_RATE 115200
 #endif
 static unsigned long millis_lastHeartbeat = 0;
 
@@ -130,15 +137,16 @@ void onScompMessage(uint8_t msg_type, const uint8_t *payload, uint8_t len, void 
             if (my_debug) { //(settings.system.debug) {
                 if (len >= sizeof(ScompHeartbeat)) {
                     const auto *hb = reinterpret_cast<const ScompHeartbeat *>(payload);
-                    Serial.printf("Heartbeat: Scomp Alive ");
-                    Serial.print(formatUptime(now_hb));
-                    Serial.printf("; Teensy Motivator heartbeat received v%u flags=0x%02X gap=%lums uptime=",hb->version, hb->flags, gap);
-                    Serial.print(formatUptime(hb->uptime_ms));
+                    Serial.printf("Heartbeat: Scomp UP ");
+                    Serial.print(formatUptime(now_hb));     // ESP32 doesn't like when I print this via printf
+                    Serial.printf(" | Teensy UP ");
+                    Serial.print(formatUptime(hb->uptime_ms));// ESP32 doesn't like when I print this via printf
+                    Serial.printf(" | v%u flags=0x%02X gap=%lums",hb->version, hb->flags, gap);
                     Serial.print("\n");
                 } else {
-                    Serial.printf("Heartbeat: Scomp Alive ");
-                    Serial.print(formatUptime(now_hb));
-                    Serial.printf("; Teensy Motivator heartbeat received (short payload %u bytes)\n", len);
+                    Serial.printf("Heartbeat: Scomp UP ");
+                    Serial.print(formatUptime(now_hb)); // ESP32 doesn't like when I print this via printf
+                    Serial.printf("; Teensy FAULT | short payload %u bytes\n", len);
                 }
             }
             break;
@@ -213,7 +221,7 @@ void setup() {
     Serial.begin(115200);
     delay(250);
 
-    scompSerialPort.begin(57600, SERIAL_8N1, PIN_SERIAL_RX, PIN_SERIAL_TX);
+    scompSerialPort.begin(SCOMP_BAUD_RATE, SERIAL_8N1, PIN_SERIAL_RX, PIN_SERIAL_TX);
     scomp.begin(scompSerialPort);
     scomp.onMessage(onScompMessage);
 
@@ -369,14 +377,14 @@ void loop() {
     }
 
     // Heartbeat (USB Serial)
-    if (now - millis_lastHeartbeat >= HEARTBEAT_INTERVAL_MS + 100) {
+    if (now - millis_lastHeartbeat >= (HEARTBEAT_INTERVAL_MS + HEARTBEAT_INTERVAL_MS)) {
         #if DEBUG_SCOMP_RX == 1
         Serial.printf("Heartbeat: Scomp Alive | SCOMP rx bytes=%lu frames=%lu crc_err=%lu sync_drops=%lu\n",
                       scomp.rxBytes(), scomp.rxFrames(), scomp.rxCrcErrors(), scomp.rxSyncDrops());
         #else
-        Serial.printf("Heartbeat: Scomp Alive ");
+        Serial.printf("Heartbeat: Scomp UP ");
         Serial.print(formatUptime(now));
-        Serial.printf(" (No Teensy Motivator Detected)\n");
+        Serial.printf(" | Teensy DOWN\n");
         #endif
 
         millis_lastHeartbeat = now;

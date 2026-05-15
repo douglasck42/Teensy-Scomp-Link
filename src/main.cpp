@@ -3,19 +3,15 @@
 
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
+#include "common/common.h"
 #include "led_sequences/led_sequences.h"
 #include "scomp/scomp_serial.h"
 #include <HardwareSerial.h>
 
-// ── Hardware ────────────────────────────────────────────────────────────────
+// ========================= HARDWARE PINS =========================
 #define PIN_STRIP1      32
 #define PIN_STRIP2      33
 #define PIN_ONBOARD      2
-
-#define NUM_LEDS_STRIP1 64              // 64 LED Matrix 8x8
-#define NUM_LEDS_STRIP2 8+24           // NeoPixel Stick Cool White + NeoPixel 24-Led Cool White
-
-#define BRIGHTNESS      40   // 0–255, keep low on USB power
 
 #ifndef PIN_SERIAL_RX
 #define PIN_SERIAL_RX  26
@@ -23,32 +19,40 @@
 #ifndef PIN_SERIAL_TX
 #define PIN_SERIAL_TX  25
 #endif
+
+// ========================= SERIAL INIT =========================
 HardwareSerial scompSerialPort(1);   // UART1 (UART0 is the USB debug port)
 ScompSerial scomp;
 
-// ── misc ─────────────────────────────────────────────────────────
-#ifndef DEBUG_SCOMP_RX
-#define DEBUG_SCOMP_RX 0
-#endif
-#ifndef SCOMP_BAUD_RATE
-#define SCOMP_BAUD_RATE 115200
-#endif
+// ========================= HEARTBEAT SETTINGS =========================
+#define HEARTBEAT_INTERVAL_MS 5000
 static unsigned long millis_lastHeartbeat = 0;
 
-// ── Strip instances ─────────────────────────────────────────────────────────
+// ========================= SCOMP SETTINGS =========================
+static unsigned long scomp_serial_peer_last_heartbeat = 0;
+static boolean scomp_peer_alive = false;
+
+static ScompHeartbeat  g_hb             = {};
+static ScompAudioState g_audio          = {};
+
+
+// ========================= LED SETTINGS =========================
+#define NUM_LEDS_STRIP1 64              // 64 LED Matrix 8x8
+#define NUM_LEDS_STRIP2 8+24           // NeoPixel Stick Cool White + NeoPixel 24-Led Cool White
+#define BRIGHTNESS      40   // 0–255, keep low on USB power
+// Strip instances
 // SK6812 RGBW — change to NEO_GRB + NEO_KHZ800 if your strips are RGB only
 Adafruit_NeoPixel strip1(NUM_LEDS_STRIP1, PIN_STRIP1, NEO_GRB  + NEO_KHZ800);             // Random Head LEDs, future
 Adafruit_NeoPixel strip2(NUM_LEDS_STRIP2, PIN_STRIP2, NEO_GRBW + NEO_KHZ800);             // NeoPixel Stick Cool White + NeoPixel Ring 24
 Adafruit_NeoPixel onboard(1, PIN_ONBOARD, NEO_GRB + NEO_KHZ800);
 
-#define HEARTBEAT_INTERVAL_MS 5000
 #define NEOPIXEL_MAX_FPS 25
 #define NEOPIXEL_MAX_DELAY_MS (1000 / NEOPIXEL_MAX_FPS)
 
-// ── LED Stuff ─────────────────────────────────────────────────────────────────
 LedStrip square8by8(strip1, false, false, 128, 0, 64);
 LedStrip radarEyeStrip(strip2, false, true, 128, 1, 6);
 LedStrip radarEyeRing(strip2, false, true, 128, 8, 64);
+
 //LedStrip square8by8 = {
 //    strip1,     // NoeoPixel strip identifier
 //    false,      // isRGBW
@@ -74,8 +78,6 @@ LedStrip radarEyeRing(strip2, false, true, 128, 8, 64);
 //    24          // Length
 //};
 
-
-
 led_sparkleRandomAnim square8by8_sparkle = {};
 led_sparkleRandomAnim radarEyeStrip_sparkle = {};
 led_SpinAnim radarEyeRing_spin = {};
@@ -83,7 +85,7 @@ led_breatheAnim radarEyeRing_breathe = {};
 led_gameOfLife square8by8_gameOfLife = {};
 led_animation smiley = {};
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+// ========================= fillStrip() =========================
 void fillStrip(Adafruit_NeoPixel &strip, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
     uint32_t color = strip.Color(r, g, b, w);
     for (int i = 0; i < strip.numPixels(); i++) {
@@ -92,47 +94,18 @@ void fillStrip(Adafruit_NeoPixel &strip, uint8_t r, uint8_t g, uint8_t b, uint8_
     strip.show();
 }
 
-char* formatUptime(unsigned long ms) {
-    static char buf[32];
-    uint32_t seconds = ms / 1000;
-    uint32_t minutes = seconds / 60;
-    uint32_t hours   = minutes / 60;
-    uint32_t days    = hours   / 24;
-
-    seconds %= 60;
-    minutes %= 60;
-    hours   %= 24;
-
-    if (days > 0)
-        sprintf(buf, "%ud %02uh %02um %02us", days, hours, minutes, seconds);
-    else if (hours > 0)
-        sprintf(buf, "%02uh %02um %02us", hours, minutes, seconds);
-    else if (minutes > 0)
-        sprintf(buf, "%02um %02us", minutes, seconds);
-    else
-        sprintf(buf, "%02us", seconds);
-
-    return buf;
-}
-
 // ========================= SCOMP =========================
-
 // Cached state populated by onScompMessage
-static ScompHeartbeat  g_hb             = {};
-static ScompAudioState g_audio          = {};
-static unsigned long   g_last_teensy_ms = 0;
-
 void onScompMessage(uint8_t msg_type, const uint8_t *payload, uint16_t len, void *) {
-    g_last_teensy_ms = millis();
     boolean my_debug = true;
 
     switch (msg_type) {
 
         case SCOMP_MSG_HEARTBEAT: {
-            static unsigned long millis_lastEspHeartbeat = 0;
-            unsigned long now_hb = g_last_teensy_ms;
-            unsigned long gap = millis_lastEspHeartbeat ? (now_hb - millis_lastEspHeartbeat) : 0;
-            millis_lastEspHeartbeat = now_hb;
+            unsigned long now_hb = millis();
+            unsigned long gap = scomp_serial_peer_last_heartbeat ? (now_hb - scomp_serial_peer_last_heartbeat) : 0;
+            scomp_serial_peer_last_heartbeat = now_hb;
+            scomp_peer_alive = true;
             if (len >= sizeof(ScompHeartbeat)) {
                 const auto *hb = reinterpret_cast<const ScompHeartbeat *>(payload);
                 Serial.printf("Heartbeat: Scomp UP ");
@@ -204,14 +177,10 @@ void scompSendState(unsigned long now) {
     }
 
     // Teensy went silent — reset so we re-request state when it comes back
-    if (g_last_teensy_ms > 0 && (now - g_last_teensy_ms) > (HEARTBEAT_INTERVAL_MS * 2)) {
+    if (scomp_serial_peer_last_heartbeat > 0 && (now - scomp_serial_peer_last_heartbeat) > (SCOMP_DEADZONE_MS)) {
         initial_request_sent = false;
     }
 }
-
-#ifndef SCOMP_SEND_INTERVAL_MS
-#define SCOMP_SEND_INTERVAL_MS 50   // 20 Hz channel updates to ESP32
-#endif
 
 // ── Setup  ─────────────────────────────────────────────────────────────────────
 void setup() {
@@ -355,29 +324,41 @@ void setup() {
 }
 
 void loop() {
-    unsigned long now = millis();
-    bool update_show = false;
-    static uint32_t count_lastHeartbeat = 0;
-
     // timers, these get set to current millis() at various points in the code to manage timing of different functions and features
+    unsigned long now = millis();
     static unsigned long millis_lastScompSend = now;
     static unsigned long millis_lastSbusRead = now;
     static unsigned long millis_lastLedShow = now;
     static unsigned long millis_lastScompHeartbeat = now;
+    static uint32_t count_lastHeartbeat = 0;
+
+    // do we update the LEDs this loop?
+    // this does NOT change the rate limiter based on millis()
+    bool update_show = false;
+
+    // watchdog reset to prevent system hangs, especially important if the SD card is missing or there's an issue with the DFPlayer that could cause blocking calls
+    #if WATCHDOG_ENABLED
+    esp_task_wdt_reset();
+    #endif
 
     // Scomp update to read incoming messages and trigger callbacks - this should be called every loop tick to ensure timely processing of incoming Scomp messages from the ESP32
     scomp.update();
+
     // Periodic state push to ESP32
     if (now - millis_lastScompSend >= SCOMP_SEND_INTERVAL_MS) {
         millis_lastScompSend = now;
         scompSendState(now);
     }
 
+    // Liveness (Scomp)
+    if (now - scomp_serial_peer_last_heartbeat >= (SCOMP_DEADZONE_MS)) {
+        scomp_peer_alive = false;
+    }
+
     // Heartbeat (USB Serial) — only prints when SCOMP link is silent
     if (now - millis_lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
         millis_lastHeartbeat = now;
-        bool teensy_alive = g_last_teensy_ms > 0 && (now - g_last_teensy_ms) < (HEARTBEAT_INTERVAL_MS * 2);
-        if (!teensy_alive) {
+        if (!scomp_peer_alive) {
             #if DEBUG_SCOMP_RX == 1
             Serial.printf("Heartbeat: Scomp Alive | SCOMP rx bytes=%lu frames=%lu crc_err=%lu sync_drops=%lu\n",
                           scomp.rxBytes(), scomp.rxFrames(), scomp.rxCrcErrors(), scomp.rxSyncDrops());

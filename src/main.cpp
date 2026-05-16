@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
-#include "settings.h"
+#include "common/settings.h"
 #include "common/common.h"
 #include "led_sequences/led_sequences.h"
 #include "scomp/scomp_link.h"
@@ -24,6 +24,36 @@
 // ========================= SERIAL SCOMP INIT =========================
 HardwareSerial scompSerialPort(1);   // UART1 (UART0 is the USB debug port)
 ScompLink scomp;
+
+struct StripTypeDef { const char* name; neoPixelType type; };
+static const StripTypeDef STRIP_TYPES[] = {
+    { "GRB_800",  NEO_GRB  + NEO_KHZ800 },   // SCOMP_STRIP_GRB_800  — WS2812B
+    { "RGB_800",  NEO_RGB  + NEO_KHZ800 },   // SCOMP_STRIP_RGB_800
+    { "GRBW_800", NEO_GRBW + NEO_KHZ800 },   // SCOMP_STRIP_GRBW_800 — SK6812
+    { "RGBW_800", NEO_RGBW + NEO_KHZ800 },   // SCOMP_STRIP_RGBW_800
+    { "GRB_400",  NEO_GRB  + NEO_KHZ400 },   // SCOMP_STRIP_GRB_400
+    { "RGB_400",  NEO_RGB  + NEO_KHZ400 },   // SCOMP_STRIP_RGB_400
+};
+static const uint8_t STRIP_TYPES_COUNT = sizeof(STRIP_TYPES) / sizeof(STRIP_TYPES[0]);
+
+static void onScompStripConfig(const ScompStripConfig &msg) {
+    if (msg.strip1_type_index < STRIP_TYPES_COUNT) {
+        strip1.updateLength(msg.strip1_num_leds);
+        strip1.setPin(msg.strip1_pin);
+        strip1.updateType(STRIP_TYPES[msg.strip1_type_index].type);
+        strip1.setBrightness(msg.strip1_brightness);
+        strip1.clear();
+        strip1.show();
+    }
+    if (msg.strip2_type_index < STRIP_TYPES_COUNT) {
+        strip2.updateLength(msg.strip2_num_leds);
+        strip2.setPin(msg.strip2_pin);
+        strip2.updateType(STRIP_TYPES[msg.strip2_type_index].type);
+        strip2.setBrightness(msg.strip2_brightness);
+        strip2.clear();
+        strip2.show();
+    }
+}
 
 static void onScompInChannels(const ScompInputChannels &msg) {
     for (uint8_t i = 0; i < SCOMP_IN_CH; i++) {
@@ -109,11 +139,12 @@ void setup() {
     Serial.begin(115200);
     delay(250);
 
-    scompSerialPort.setRxBufferSize(512);
+    scompSerialPort.setRxBufferSize(2048);
     scompSerialPort.begin(SCOMP_BAUD_RATE, SERIAL_8N1, PIN_SERIAL_RX, PIN_SERIAL_TX);
     scomp.begin(scompSerialPort, SCOMP_FLAG_NODE_LOCAL);
     scomp.onInputChannels(onScompInChannels);
     scomp.onOutputChannels(onScompOutChannels);
+    scomp.onStripConfig(onScompStripConfig);
 
     Serial.println("Sparkle Motion Mini — RGBW test");
 
@@ -245,6 +276,8 @@ void setup() {
     radarEyeRing_breathe.defaultDelay = 50;        // animation speed in ms - needs to match defaultDelay
     radarEyeRing_breathe.enabled = false;
 
+    print_memory_info();
+
 }
 
 
@@ -293,19 +326,10 @@ void loop() {
         send_input_next = !send_input_next;
     }
 
-    // Heartbeat (USB Serial) — only prints when SCOMP link is silent
+    // Heartbeat (USB Serial) — periodic status print
     if (now - millis_lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
         millis_lastHeartbeat = now;
-        if (!scomp.peerAlive()) {
-            // More serial.prints to get around ESP32 weirdness and keep this code portable
-            Serial.printf("Heartbeat: Local Node 0x%02X UP ", SCOMP_FLAG_NODE_LOCAL);
-            Serial.print(formatUptime(now));
-            Serial.printf(" | Remote Node 0x%02X DOWN", SCOMP_FLAG_NODE_REMOTE);
-            #if DEBUG_SCOMP_RX
-            Serial.printf(" | frames=%lu errors=%lu", scomp.rxFrames(), scomp.rxErrors());
-            #endif
-            Serial.print("\n");
-        }
+        scomp.printHeartbeat();
     }
 
     #define PRINT_ALL_INTERVAL_MS 10000

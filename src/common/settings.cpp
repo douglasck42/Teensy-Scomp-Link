@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Douglas Kempthorne (douglas@kempthorne.com)
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "settings.h"
+#include "common/settings.h"
 #include <LittleFS.h>
 
 #define zIdx(x) ((x) - 1)
@@ -390,22 +390,25 @@ void printChannel(ChannelType type, uint8_t channel) {
 }
 
 void printChannelUs(ChannelType type) {
+    boolean has_values = false;
     if (type == ChannelType::iCHANNEL) {
         for (uint8_t channel = 0; channel < settings.system.num_ichannels; channel++) {
             auto& ch = settings.ichannel[channel];
             if (ch.us_value > 0) {
                 Serial.printf("ic%d:%d ", channel + 1, ch.us_value);
+                has_values = true;
             }
         }
-        Serial.println();
+        if (has_values) { Serial.println(); }
     } else {
         for (uint8_t channel = 0; channel < settings.system.num_ochannels; channel++) {
             auto& ch = settings.ochannel[channel];
             if (ch.us_value > 0) {
                 Serial.printf("oc%d:%d ", channel + 1, ch.us_value);
+                has_values = true;
             }
         }
-        Serial.println();
+        if (has_values) { Serial.println(); }
     }
 }
 

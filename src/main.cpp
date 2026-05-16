@@ -3,9 +3,10 @@
 
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
+#include "settings.h"
 #include "common/common.h"
 #include "led_sequences/led_sequences.h"
-#include "scomp/scomp_serial.h"
+#include "scomp/scomp_link.h"
 #include <HardwareSerial.h>
 
 // ========================= HARDWARE PINS =========================
@@ -20,20 +21,29 @@
 #define PIN_SERIAL_TX  25
 #endif
 
-// ========================= SERIAL INIT =========================
+// ========================= SERIAL SCOMP INIT =========================
 HardwareSerial scompSerialPort(1);   // UART1 (UART0 is the USB debug port)
-ScompSerial scomp;
+ScompLink scomp;
+
+static void onScompInChannels(const ScompInputChannels &msg) {
+    for (uint8_t i = 0; i < SCOMP_IN_CH; i++) {
+        settings.ichannel[i].us_value = msg.us[i];
+        settings.ichannel[i].updated  = true;
+    }
+}
+
+static void onScompOutChannels(const ScompOutputChannels &msg) {
+    for (uint8_t i = 0; i < SCOMP_OUT_CH; i++) {
+        settings.ochannel[i].us_value = msg.us[i];
+        settings.ochannel[i].updated  = true;
+    }
+}
 
 // ========================= HEARTBEAT SETTINGS =========================
 #define HEARTBEAT_INTERVAL_MS 5000
 static unsigned long millis_lastHeartbeat = 0;
 
 // ========================= SCOMP SETTINGS =========================
-static unsigned long scomp_serial_peer_last_heartbeat = 0;
-static boolean scomp_peer_alive = false;
-
-static ScompHeartbeat  g_hb             = {};
-static ScompAudioState g_audio          = {};
 
 
 // ========================= LED SETTINGS =========================
@@ -94,102 +104,16 @@ void fillStrip(Adafruit_NeoPixel &strip, uint8_t r, uint8_t g, uint8_t b, uint8_
     strip.show();
 }
 
-// ========================= SCOMP =========================
-// Cached state populated by onScompMessage
-void onScompMessage(uint8_t msg_type, const uint8_t *payload, uint16_t len, void *) {
-    boolean my_debug = true;
-
-    switch (msg_type) {
-
-        case SCOMP_MSG_HEARTBEAT: {
-            unsigned long now_hb = millis();
-            unsigned long gap = scomp_serial_peer_last_heartbeat ? (now_hb - scomp_serial_peer_last_heartbeat) : 0;
-            scomp_serial_peer_last_heartbeat = now_hb;
-            scomp_peer_alive = true;
-            if (len >= sizeof(ScompHeartbeat)) {
-                const auto *hb = reinterpret_cast<const ScompHeartbeat *>(payload);
-                Serial.printf("Heartbeat: Scomp UP ");
-                Serial.print(formatUptime(now_hb));     // ESP32 doesn't like when I print this via printf
-                Serial.printf(" | Teensy UP ");
-                Serial.print(formatUptime(hb->uptime_ms));// ESP32 doesn't like when I print this via printf
-                Serial.printf(" | v%u flags=0x%02X gap=%lums",hb->version, hb->flags, gap);
-                Serial.print("\n");
-            } else {
-                Serial.printf("Heartbeat: Scomp UP ");
-                Serial.print(formatUptime(now_hb)); // ESP32 doesn't like when I print this via printf
-                Serial.printf("; Teensy FAULT | short payload %u bytes\n", len);
-            }
-            break;
-        }
-
-        case SCOMP_MSG_AUDIO_STATE:
-            if (len < sizeof(ScompAudioState)) break;
-            memcpy(&g_audio, payload, sizeof(g_audio));
-            // TODO: sync audio-reactive LED if g_audio.state == SCOMP_AUDIO_PLAYING
-            break;
-
-        case SCOMP_MSG_INPUT_CHANNELS:
-        case SCOMP_MSG_OUTPUT_CHANNELS:
-            break;
-
-        case SCOMP_MSG_LED_TRIGGER: {
-            if (len < sizeof(ScompLedTrigger)) break;
-            ScompLedTrigger trig;
-            memcpy(&trig, payload, sizeof(trig));
-            switch (trig.animation_id) {
-                case SCOMP_LED_OFF:
-                    square8by8_sparkle.enabled   = false;
-                    square8by8_gameOfLife.enabled = false;
-                    radarEyeStrip_sparkle.enabled = false;
-                    radarEyeRing_spin.enabled     = false;
-                    radarEyeRing_breathe.enabled  = false;
-                    break;
-                case SCOMP_LED_BREATHE:
-                    radarEyeRing_breathe.r       = trig.r;
-                    radarEyeRing_breathe.g       = trig.g;
-                    radarEyeRing_breathe.b       = trig.b;
-                    radarEyeRing_spin.enabled    = false;
-                    radarEyeRing_breathe.enabled = true;
-                    break;
-                case SCOMP_LED_FAILSAFE:
-                    // TODO: red blink — needs a blink anim or solid red fallback
-                    break;
-                default:
-                    break;
-            }
-            break;
-        }
-
-        default:
-            // if (settings.system.debug) Serial.printf("SCOMP: Unknown message type 0x%02X len=%u\n", msg_type, len);
-            if (my_debug) Serial.printf("SCOMP: Unknown message type 0x%02X len=%u\n", msg_type, len);
-            break;
-    }
-}
-
-void scompSendState(unsigned long now) {
-    static bool initial_request_sent = false;
-
-    if (!initial_request_sent) {
-        scomp.sendRequestState();
-        initial_request_sent = true;
-        return;
-    }
-
-    // Teensy went silent — reset so we re-request state when it comes back
-    if (scomp_serial_peer_last_heartbeat > 0 && (now - scomp_serial_peer_last_heartbeat) > (SCOMP_DEADZONE_MS)) {
-        initial_request_sent = false;
-    }
-}
-
 // ── Setup  ─────────────────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
     delay(250);
 
+    scompSerialPort.setRxBufferSize(512);
     scompSerialPort.begin(SCOMP_BAUD_RATE, SERIAL_8N1, PIN_SERIAL_RX, PIN_SERIAL_TX);
-    scomp.begin(scompSerialPort);
-    scomp.onMessage(onScompMessage);
+    scomp.begin(scompSerialPort, SCOMP_FLAG_NODE_LOCAL);
+    scomp.onInputChannels(onScompInChannels);
+    scomp.onOutputChannels(onScompOutChannels);
 
     Serial.println("Sparkle Motion Mini — RGBW test");
 
@@ -323,13 +247,16 @@ void setup() {
 
 }
 
+
+
 void loop() {
     // timers, these get set to current millis() at various points in the code to manage timing of different functions and features
     unsigned long now = millis();
-    static unsigned long millis_lastScompSend = now;
     static unsigned long millis_lastSbusRead = now;
     static unsigned long millis_lastLedShow = now;
+    static unsigned long millis_lastScompSend = now;
     static unsigned long millis_lastScompHeartbeat = now;
+    static unsigned long millis_lastPrintAll    = now;
     static uint32_t count_lastHeartbeat = 0;
 
     // do we update the LEDs this loop?
@@ -344,40 +271,49 @@ void loop() {
     // Scomp update to read incoming messages and trigger callbacks - this should be called every loop tick to ensure timely processing of incoming Scomp messages from the ESP32
     scomp.update();
 
-    // Periodic state push to ESP32
-    if (now - millis_lastScompSend >= SCOMP_SEND_INTERVAL_MS) {
-        millis_lastScompSend = now;
-        scompSendState(now);
+    // Heartbeat (Scomp) — announce ourselves to the peer
+    if (now - millis_lastScompHeartbeat >= HEARTBEAT_INTERVAL_MS) {
+        scomp.sendHeartbeat(now);
+        millis_lastScompHeartbeat = now;
     }
 
-    // Liveness (Scomp)
-    if (now - scomp_serial_peer_last_heartbeat >= (SCOMP_DEADZONE_MS)) {
-        scomp_peer_alive = false;
+    // Periodic channel state push to SCOMP REMOTE — interleaved to halve per-tick burst size
+    if (now - millis_lastScompSend >= SCOMP_SEND_INTERVAL_MS) {
+        millis_lastScompSend = now;
+        static bool send_input_next = true;
+        if (send_input_next) {
+            ScompInputChannels in_msg = {};
+            for (uint8_t i = 0; i < SCOMP_IN_CH; i++) in_msg.us[i] = settings.ichannel[i].us_value;
+            scomp.sendInputChannels(in_msg);
+        } else {
+            ScompOutputChannels out_msg = {};
+            for (uint8_t i = 0; i < SCOMP_OUT_CH; i++) out_msg.us[i] = settings.ochannel[i].us_value;
+            scomp.sendOutputChannels(out_msg);
+        }
+        send_input_next = !send_input_next;
     }
 
     // Heartbeat (USB Serial) — only prints when SCOMP link is silent
     if (now - millis_lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
         millis_lastHeartbeat = now;
-        if (!scomp_peer_alive) {
-            #if DEBUG_SCOMP_RX == 1
-            Serial.printf("Heartbeat: Scomp Alive | SCOMP rx bytes=%lu frames=%lu crc_err=%lu sync_drops=%lu\n",
-                          scomp.rxBytes(), scomp.rxFrames(), scomp.rxCrcErrors(), scomp.rxSyncDrops());
-            #else
-            Serial.printf("Heartbeat: Scomp UP ");
+        if (!scomp.peerAlive()) {
+            // More serial.prints to get around ESP32 weirdness and keep this code portable
+            Serial.printf("Heartbeat: Local Node 0x%02X UP ", SCOMP_FLAG_NODE_LOCAL);
             Serial.print(formatUptime(now));
-            Serial.printf(" | Teensy DOWN\n");
+            Serial.printf(" | Remote Node 0x%02X DOWN", SCOMP_FLAG_NODE_REMOTE);
+            #if DEBUG_SCOMP_RX
+            Serial.printf(" | frames=%lu errors=%lu", scomp.rxFrames(), scomp.rxErrors());
             #endif
+            Serial.print("\n");
         }
     }
 
-    // Heartbeat (Scomp)
-    if (now - millis_lastScompHeartbeat >= HEARTBEAT_INTERVAL_MS) {
-        ScompHeartbeat hb = {};
-        hb.version   = SCOMP_PROTOCOL_VERSION;
-        hb.uptime_ms = now;
-        hb.flags     = 0;
-        scomp.sendHeartbeat(hb);
-        millis_lastScompHeartbeat = now;
+    #define PRINT_ALL_INTERVAL_MS 10000
+    // verbose chatty stuff
+    if (now - millis_lastPrintAll >= PRINT_ALL_INTERVAL_MS) {
+        printChannelUs(ChannelType::iCHANNEL);
+        printChannelUs(ChannelType::oCHANNEL);
+        millis_lastPrintAll = now;
     }
 
     // square8by8 - Sparkle

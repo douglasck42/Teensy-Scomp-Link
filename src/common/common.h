@@ -32,4 +32,3 @@
 #define SCOMP_SEND_INTERVAL_MS 50   // 20 Hz channel updates to ESP32
 #endif
 
-char* formatUptime(unsigned long ms);

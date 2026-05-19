@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Douglas Kempthorne (douglas@kempthorne.com)
 // SPDX-License-Identifier: GPL-3.0-or-later
+#define BUILD_VERSION "0.3.0"
 
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
@@ -137,7 +138,18 @@ void fillStrip(Adafruit_NeoPixel &strip, uint8_t r, uint8_t g, uint8_t b, uint8_
 // ── Setup  ─────────────────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
-    delay(250);
+#if WAIT_FOR_SERIAL == 1
+    if (WAIT_FOR_SERIAL) {
+        while (!Serial) {
+            delay(100);
+        }
+    }
+
+    Serial.println("Scomp Link v" BUILD_VERSION ": starting up... (serial required)");
+#else
+    delay(2000); // Wait for Serial to be ready but non-blocking
+    Serial.println("Scomp Link v" BUILD_VERSION ": starting up... (serial optional)");
+#endif
 
     scompSerialPort.setRxBufferSize(2048);
     scompSerialPort.begin(SCOMP_BAUD_RATE, SERIAL_8N1, PIN_SERIAL_RX, PIN_SERIAL_TX);

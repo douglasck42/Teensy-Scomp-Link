@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Douglas Kempthorne (douglas@kempthorne.com)
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#define BUILD_VERSION "0.3.0"
+
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 #include "common/settings.h"
@@ -35,6 +37,16 @@ static const StripTypeDef STRIP_TYPES[] = {
     { "RGB_400",  NEO_RGB  + NEO_KHZ400 },   // SCOMP_STRIP_RGB_400
 };
 static const uint8_t STRIP_TYPES_COUNT = sizeof(STRIP_TYPES) / sizeof(STRIP_TYPES[0]);
+
+// ========================= LED SETTINGS =========================
+#define NUM_LEDS_STRIP1 64              // 64 LED Matrix 8x8
+#define NUM_LEDS_STRIP2 8+24           // NeoPixel Stick Cool White + NeoPixel 24-Led Cool White
+#define BRIGHTNESS      40   // 0–255, keep low on USB power
+// Strip instances
+// SK6812 RGBW — change to NEO_GRB + NEO_KHZ800 if your strips are RGB only
+Adafruit_NeoPixel strip1(NUM_LEDS_STRIP1, PIN_STRIP1, NEO_GRB  + NEO_KHZ800);             // Random Head LEDs, future
+Adafruit_NeoPixel strip2(NUM_LEDS_STRIP2, PIN_STRIP2, NEO_GRBW + NEO_KHZ800);             // NeoPixel Stick Cool White + NeoPixel Ring 24
+Adafruit_NeoPixel onboard(1, PIN_ONBOARD, NEO_GRB + NEO_KHZ800);
 
 static void onScompStripConfig(const ScompStripConfig &msg) {
     if (msg.strip1_type_index < STRIP_TYPES_COUNT) {
@@ -72,19 +84,6 @@ static void onScompOutChannels(const ScompOutputChannels &msg) {
 // ========================= HEARTBEAT SETTINGS =========================
 #define HEARTBEAT_INTERVAL_MS 5000
 static unsigned long millis_lastHeartbeat = 0;
-
-// ========================= SCOMP SETTINGS =========================
-
-
-// ========================= LED SETTINGS =========================
-#define NUM_LEDS_STRIP1 64              // 64 LED Matrix 8x8
-#define NUM_LEDS_STRIP2 8+24           // NeoPixel Stick Cool White + NeoPixel 24-Led Cool White
-#define BRIGHTNESS      40   // 0–255, keep low on USB power
-// Strip instances
-// SK6812 RGBW — change to NEO_GRB + NEO_KHZ800 if your strips are RGB only
-Adafruit_NeoPixel strip1(NUM_LEDS_STRIP1, PIN_STRIP1, NEO_GRB  + NEO_KHZ800);             // Random Head LEDs, future
-Adafruit_NeoPixel strip2(NUM_LEDS_STRIP2, PIN_STRIP2, NEO_GRBW + NEO_KHZ800);             // NeoPixel Stick Cool White + NeoPixel Ring 24
-Adafruit_NeoPixel onboard(1, PIN_ONBOARD, NEO_GRB + NEO_KHZ800);
 
 #define NEOPIXEL_MAX_FPS 25
 #define NEOPIXEL_MAX_DELAY_MS (1000 / NEOPIXEL_MAX_FPS)
@@ -138,13 +137,14 @@ void fillStrip(Adafruit_NeoPixel &strip, uint8_t r, uint8_t g, uint8_t b, uint8_
 void setup() {
     Serial.begin(115200);
     delay(250);
+    Serial.println("Teensy Scomp Link v" BUILD_VERSION ": starting up... (serial optional)");
 
     scompSerialPort.setRxBufferSize(2048);
     scompSerialPort.begin(SCOMP_BAUD_RATE, SERIAL_8N1, PIN_SERIAL_RX, PIN_SERIAL_TX);
     scomp.begin(scompSerialPort, SCOMP_FLAG_NODE_LOCAL);
     scomp.onInputChannels(onScompInChannels);
     scomp.onOutputChannels(onScompOutChannels);
-    scomp.onStripConfig(onScompStripConfig);
+    //scomp.onStripConfig(onScompStripConfig);
 
     Serial.println("Sparkle Motion Mini — RGBW test");
 
@@ -304,6 +304,9 @@ void loop() {
     // Scomp update to read incoming messages and trigger callbacks - this should be called every loop tick to ensure timely processing of incoming Scomp messages from the ESP32
     scomp.update();
 
+    #if BB8_SPHERE_ONLY == 1
+    update_show = led_sphere_loop(strip1);
+    #else
     // Heartbeat (Scomp) — announce ourselves to the peer
     if (now - millis_lastScompHeartbeat >= HEARTBEAT_INTERVAL_MS) {
         scomp.sendHeartbeat(now);
@@ -387,6 +390,7 @@ void loop() {
             update_show = true;
         }
     }
+    #endif
 
     if (update_show) {
         if (now - millis_lastLedShow >= NEOPIXEL_MAX_DELAY_MS) {   // limit show updates to ~25fps to avoid overwhelming the NeoPixel timing

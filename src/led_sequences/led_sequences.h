@@ -46,7 +46,7 @@ struct led_animation {
 
 void setupLEDSequence();
 void stopLEDSequence();
-void solidFill(Adafruit_NeoPixel &s, uint32_t color, uint8_t start_led, uint8_t number_of_leds);
+void solidFill(LedStrip &s, uint32_t hex);
 uint32_t hexColor(LedStrip &s, uint32_t hex, uint8_t brightnessOverride = 255);
 uint32_t RGBToHex(uint8_t r, uint8_t g, uint8_t b);
 #define INCLUDE_REFERENCE_FUNCTIONS 0
@@ -62,3 +62,13 @@ uint32_t hexColorRGBW(Adafruit_NeoPixel &s, uint32_t hex);
 #include "breathe.h"
 #include "game_of_life.h"
 #include "Sprites_8x8/sprites_8x8.h"
+#include "led_sequences/bb8_sphere.h"
+
+#define HEX_red 0xFF0000
+#define HEX_green 0x00FF00
+#define HEX_blue 0x0000FF
+#define HEX_white 0xFFFFFF
+#define HEX_black 0x000000
+#define HEX_cyan 0x00FFFF
+#define HEX_magenta 0xFF00FF
+#define HEX_yellow 0xFFFF00 

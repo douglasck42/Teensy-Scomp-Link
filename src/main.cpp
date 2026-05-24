@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #define BUILD_VERSION "0.3.0"
 
-#define BUILD_VERSION "0.3.0"
-
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 #include "common/settings.h"

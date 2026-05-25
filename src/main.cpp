@@ -287,6 +287,10 @@ void setup() {
 
     print_memory_info();
 
+    
+    #if BB8_SPHERE_ONLY == 1
+    initBB8Matrix();
+    #endif
 }
 
 
@@ -314,7 +318,7 @@ void loop() {
     scomp.update();
 
     #if BB8_SPHERE_ONLY == 1
-    update_show = led_sphere_loop(strip1);
+    update_show = updateBB8Matrix(strip1);
     #else
     // Heartbeat (Scomp) — announce ourselves to the peer
     if (now - millis_lastScompHeartbeat >= HEARTBEAT_INTERVAL_MS) {
